@@ -11,73 +11,64 @@ import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbEndpoint;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
-import android.widget.Button;
-import android.widget.EditText;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import com.rpd.rgms_unit_gui.R;
+
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.HashMap;
 
-
 public class DashboardActivity extends AppCompatActivity {
 
+    private TextView statusTextView;
+    private ScrollView scrollView;
 
-    TextView statusTextView;
-    Button connectButton;
-    EditText inputDataEditText;
-    Button sendDataButton;
     private static final String TAG = "DashboardActivity";
-    private static final String ACTION_USB_PERMISSION = "com.rpd.rgms_unit_gui.USB_PERMISSION"; // Unique action string for your app
-
-    // TODO: Replace with your actual USB device's Vendor ID and Product ID
-    private static final int YOUR_VENDOR_ID = 0x1234; // Example Vendor ID
-    private static final int YOUR_PRODUCT_ID = 0x5678; // Example Product ID
+    private static final String ACTION_USB_PERMISSION = "com.rpd.rgms_unit_gui.USB_PERMISSION";
 
     private UsbManager usbManager;
-    private UsbDevice connectedController; // Store the connected controller device
+    private UsbDevice connectedController;
+    private UsbDeviceConnection usbConnection;
+    private UsbEndpoint inEndpoint;
 
-    // BroadcastReceiver to handle USB permission responses
     private final BroadcastReceiver usbReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
 
             if (ACTION_USB_PERMISSION.equals(action)) {
-                synchronized (this) {
-                    UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        if (device != null) {
-                            // Permission granted for the device
-                            Log.d(TAG, "Permission granted for USB device: " + device.getDeviceName());
-                            Toast.makeText(context, "USB Permission Granted!", Toast.LENGTH_SHORT).show();
-                            connectedController = device;
-                            // Now you can proceed to communicate with your controller
-                            openUsbDevice(device);
-                        }
-                    } else {
-                        // Permission denied
-                        Log.d(TAG, "Permission denied for USB device: " + device.getDeviceName());
-                        Toast.makeText(context, "USB Permission Denied.", Toast.LENGTH_SHORT).show();
-                    }
-                }
-            } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
-                // Handle device attached events (e.g., if the app wasn't running when device was plugged in)
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                if (device != null && device.getVendorId() == YOUR_VENDOR_ID && device.getProductId() == YOUR_PRODUCT_ID) {
-                    Log.d(TAG, "Controller attached: " + device.getDeviceName());
-                    requestUsbPermission(device); // Request permission immediately upon attachment
+                if (device != null && intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                    Log.d(TAG, "Permission granted for: " + device.getDeviceName());
+                    connectedController = device;
+                    openUsbDevice(device);
+                } else {
+                    Log.d(TAG, "Permission denied.");
+                    Toast.makeText(context, "USB Permission Denied.", Toast.LENGTH_SHORT).show();
                 }
+
+            } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
+                UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (device != null) {
+                    Log.d(TAG, "USB device attached: " + device.getDeviceName());
+                    connectedController = device;
+                    requestUsbPermission(device);
+                }
+
             } else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
-                // Handle device detached events
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 if (device != null && device.equals(connectedController)) {
-                    Log.d(TAG, "Controller detached: " + device.getDeviceName());
-                    Toast.makeText(context, "USB Device Detached.", Toast.LENGTH_SHORT).show();
+                    Log.d(TAG, "Device detached: " + device.getDeviceName());
                     connectedController = null;
-                    // Close communication if open
+                    statusTextView.setText("USB Status: Not Connected");
+                    if (usbConnection != null) {
+                        usbConnection.close();
+                        usbConnection = null;
+                    }
+                    Toast.makeText(context, "USB Device Detached", Toast.LENGTH_SHORT).show();
                 }
             }
         }
@@ -88,126 +79,114 @@ public class DashboardActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_dashboard);
 
-        // Initialize your views by finding them by their IDs
         statusTextView = findViewById(R.id.status_text);
-        connectButton = findViewById(R.id.connect_button);
-        inputDataEditText = findViewById(R.id.input_data_edittext);
-        sendDataButton = findViewById(R.id.send_data_button); // Initialize the button
+        scrollView = findViewById(R.id.scroll_view);
+
         usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
 
-        // Register the BroadcastReceiver for USB events
         IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        registerReceiver(usbReceiver, filter);
 
-        // Find and request permission for the device when the activity starts
-        findAndRequestControllerPermission();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(usbReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(usbReceiver, filter);
+        }
+
+        findAndRequestFirstUsbDevice();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Unregister the BroadcastReceiver to prevent memory leaks
         unregisterReceiver(usbReceiver);
     }
 
-    private void findAndRequestControllerPermission() {
+    private void findAndRequestFirstUsbDevice() {
+        if (usbManager == null) {
+            Log.e(TAG, "USB Manager not available");
+            return;
+        }
+
         HashMap<String, UsbDevice> deviceList = usbManager.getDeviceList();
-        Log.d(TAG, "Found " + deviceList.size() + " USB devices.");
-
-        // Iterate through connected USB devices
-        for (UsbDevice device : deviceList.values()) {
-            Log.d(TAG, "Device: " + device.getDeviceName() + ", VID: " + String.format("0x%04X", device.getVendorId()) + ", PID: " + String.format("0x%04X", device.getProductId()));
-
-            // Identify your controller by Vendor ID and Product ID
-            if (device.getVendorId() == YOUR_VENDOR_ID && device.getProductId() == YOUR_PRODUCT_ID) {
-                Log.d(TAG, "Controller found: " + device.getDeviceName());
-                connectedController = device;
-                requestUsbPermission(device);
-                return; // Found the device, no need to continue searching
-            }
+        if (deviceList.isEmpty()) {
+            statusTextView.setText("USB Status: Not Connected");
+            return;
         }
-        if (connectedController == null) {
-            Toast.makeText(this, "Controller not found. Please connect it.", Toast.LENGTH_LONG).show();
-        }
+
+        UsbDevice device = deviceList.values().iterator().next();
+        connectedController = device;
+        requestUsbPermission(device);
     }
 
     private void requestUsbPermission(UsbDevice device) {
         if (!usbManager.hasPermission(device)) {
-            Log.d(TAG, "Requesting permission for device: " + device.getDeviceName());
             PendingIntent permissionIntent = PendingIntent.getBroadcast(
-                    this, 0, new Intent(ACTION_USB_PERMISSION), PendingIntent.FLAG_IMMUTABLE);
+                    this, 0, new Intent(ACTION_USB_PERMISSION),
+                    PendingIntent.FLAG_IMMUTABLE);
             usbManager.requestPermission(device, permissionIntent);
         } else {
-            Log.d(TAG, "Permission already granted for device: " + device.getDeviceName());
-            Toast.makeText(this, "USB Permission already granted.", Toast.LENGTH_SHORT).show();
             connectedController = device;
             openUsbDevice(device);
         }
     }
 
     private void openUsbDevice(UsbDevice device) {
-        // This is where you would typically open the connection and start communicating
-        Log.d(TAG, "Attempting to open USB device: " + device.getDeviceName());
-
-        UsbDeviceConnection connection = null;
         UsbInterface usbInterface = null;
-        UsbEndpoint inEndpoint = null;
-        UsbEndpoint outEndpoint = null;
+        inEndpoint = null;
 
-        // Find the correct interface and endpoints for your device
+        // Find IN endpoint
         for (int i = 0; i < device.getInterfaceCount(); i++) {
-            UsbInterface currentInterface = device.getInterface(i);
-            // You might need to check interface class, subclass, or protocol here
-            // For example: if (currentInterface.getInterfaceClass() == UsbConstants.USB_CLASS_HID)
-            usbInterface = currentInterface; // Assuming the first interface for simplicity
-
-            for (int j = 0; j < usbInterface.getEndpointCount(); j++) {
-                UsbEndpoint endpoint = usbInterface.getEndpoint(j);
-                if (endpoint.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK) { // Example: Bulk transfer
-                    if (endpoint.getDirection() == UsbConstants.USB_DIR_IN) {
-                        inEndpoint = endpoint;
-                    } else {
-                        outEndpoint = endpoint;
-                    }
+            UsbInterface intf = device.getInterface(i);
+            for (int j = 0; j < intf.getEndpointCount(); j++) {
+                UsbEndpoint endpoint = intf.getEndpoint(j);
+                if (endpoint.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK &&
+                        endpoint.getDirection() == UsbConstants.USB_DIR_IN) {
+                    inEndpoint = endpoint;
+                    usbInterface = intf;
+                    break;
                 }
             }
-            if (inEndpoint != null && outEndpoint != null) {
-                break; // Found both IN and OUT endpoints for this interface
-            }
+            if (inEndpoint != null) break;
         }
 
-        if (usbInterface == null) {
-            Log.e(TAG, "No suitable USB interface found for the device.");
-            Toast.makeText(this, "No suitable USB interface found.", Toast.LENGTH_SHORT).show();
+        if (usbInterface == null || inEndpoint == null) {
+            Toast.makeText(this, "No readable endpoint found.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        connection = usbManager.openDevice(device);
-        if (connection == null) {
-            Log.e(TAG, "Failed to open USB device connection.");
-            Toast.makeText(this, "Failed to open USB device connection.", Toast.LENGTH_SHORT).show();
+        usbConnection = usbManager.openDevice(device);
+        if (usbConnection == null) {
+            Toast.makeText(this, "Failed to open connection.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        if (connection.claimInterface(usbInterface, true)) {
-            Log.d(TAG, "Interface claimed successfully.");
-            Toast.makeText(this, "Interface claimed!", Toast.LENGTH_SHORT).show();
-
-            // Now you can use 'connection', 'inEndpoint', and 'outEndpoint'
-            // to send and receive data from your USB controller.
-            // Example: connection.bulkTransfer(outEndpoint, dataToSend, dataToSend.length, 0);
-            // Example: connection.bulkTransfer(inEndpoint, dataToReceive, dataToReceive.length, 0);
-
-            // Remember to close the connection when done or on device detach
-            // connection.releaseInterface(usbInterface);
-            // connection.close();
-
+        if (usbConnection.claimInterface(usbInterface, true)) {
+            statusTextView.setText("USB Status: Connected (" +
+                    device.getVendorId() + ":" + device.getProductId() + ")");
+            Log.d(TAG, "USB Device ready. Starting read thread.");
+            startReadingThread();
         } else {
-            Log.e(TAG, "Failed to claim USB interface.");
-            Toast.makeText(this, "Failed to claim USB interface.", Toast.LENGTH_SHORT).show();
-            connection.close();
+            Toast.makeText(this, "Failed to claim interface.", Toast.LENGTH_SHORT).show();
+            usbConnection.close();
         }
+    }
+
+    private void startReadingThread() {
+        new Thread(() -> {
+            byte[] buffer = new byte[inEndpoint.getMaxPacketSize()];
+            while (connectedController != null && usbConnection != null) {
+                int bytesRead = usbConnection.bulkTransfer(inEndpoint, buffer, buffer.length, 1000);
+                if (bytesRead > 0) {
+                    String data = new String(buffer, 0, bytesRead);
+                    Log.d(TAG, "Received: " + data);
+                    runOnUiThread(() -> {
+                        statusTextView.append("\n" + data);
+                        scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
+                    });
+                }
+            }
+        }).start();
     }
 }

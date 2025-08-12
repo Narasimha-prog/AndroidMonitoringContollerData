@@ -1,97 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".DashboardActivity"> <!-- Added tools:context for preview -->
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="#101010">
 
-    <!-- Welcome TextView -->
     <TextView
-        android:id="@+id/welcome_text"
-        android:layout_width="wrap_content"
+        android:id="@+id/header_text"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Welcome to Dashboard"
-        android:textSize="24sp"
+        android:text="USB Data Monitor"
+        android:textSize="20sp"
+        android:textColor="#FFFFFF"
         android:textStyle="bold"
-        app:layout_constraintBottom_toTopOf="@+id/status_text"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_chainStyle="packed"
-        android:layout_marginBottom="16dp" />
+        android:gravity="center"
+        android:padding="8dp" />
 
-    <!-- USB Connection Status TextView -->
-    <TextView
-        android:id="@+id/status_text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="USB Status: Not Connected"
-        android:textSize="18sp"
-        android:textColor="@android:color/darker_gray"
-        app:layout_constraintBottom_toTopOf="@+id/connect_button"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/welcome_text"
-        android:layout_marginBottom="24dp"/>
+    <ScrollView
+        android:id="@+id/scroll_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-    <!-- Button to (Re)Connect USB Device -->
-    <Button
-        android:id="@+id/connect_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Scan/Connect USB Device"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:backgroundTint="@color/design_default_color_primary"
-        android:textColor="@android:color/white"
-        android:drawableStart="@android:drawable/ic_menu_rotate"
-        android:drawablePadding="8dp"
-        app:layout_constraintBottom_toTopOf="@+id/input_data_edittext"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/status_text"
-        android:layout_marginBottom="32dp"/>
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="USB Status: Waiting..."
+            android:textColor="#00FF00"
+            android:padding="8dp"
+            android:scrollbars="vertical"
+            android:fontFamily="monospace"
+            android:textSize="14sp" />
+    </ScrollView>
 
-    <!-- EditText for sending data -->
-    <EditText
-        android:id="@+id/input_data_edittext"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:hint="Enter data to send..."
-        android:inputType="text"
-        android:padding="12dp"
-        android:layout_marginStart="24dp"
-        android:layout_marginEnd="24dp"
-
-        app:layout_constraintBottom_toTopOf="@+id/send_data_button"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/connect_button"
-        app:layout_constraintVertical_bias="0.0"
-        android:layout_marginBottom="16dp"/>
-
-    <!-- Button to Send Data -->
-    <Button
-        android:id="@+id/send_data_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Send Data"
-        android:paddingStart="32dp"
-        android:paddingEnd="32dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:backgroundTint="@color/design_default_color_secondary"
-        android:textColor="@android:color/white"
-        android:drawableStart="@android:drawable/ic_menu_send"
-        android:drawablePadding="8dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/input_data_edittext"
-        app:layout_constraintVertical_bias="0.0"/>
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>
