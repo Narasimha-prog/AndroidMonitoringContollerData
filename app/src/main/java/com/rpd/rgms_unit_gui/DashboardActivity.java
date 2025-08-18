@@ -1,5 +1,6 @@
 package com.rpd.rgms_unit_gui;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -74,6 +75,7 @@ public class DashboardActivity extends AppCompatActivity {
         }
     };
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -101,6 +103,10 @@ public class DashboardActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         unregisterReceiver(usbReceiver);
+        if (usbConnection != null) {
+            usbConnection.close();
+            usbConnection = null;
+        }
     }
 
     private void findAndRequestFirstUsbDevice() {
@@ -176,17 +182,39 @@ public class DashboardActivity extends AppCompatActivity {
     private void startReadingThread() {
         new Thread(() -> {
             byte[] buffer = new byte[inEndpoint.getMaxPacketSize()];
+            StringBuilder dataBuffer = new StringBuilder();
+
             while (connectedController != null && usbConnection != null) {
                 int bytesRead = usbConnection.bulkTransfer(inEndpoint, buffer, buffer.length, 1000);
                 if (bytesRead > 0) {
-                    String data = new String(buffer, 0, bytesRead);
-                    Log.d(TAG, "Received: " + data);
-                    runOnUiThread(() -> {
-                        statusTextView.append("\n" + data);
-                        scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
-                    });
+                    // Convert bytes read to string and append to dataBuffer
+                    String receivedChunk = new String(buffer, 0, bytesRead);
+                    dataBuffer.append(receivedChunk);
+
+                    int newlineIndex;
+                    // Extract lines separated by \n
+                    while ((newlineIndex = dataBuffer.indexOf("\n")) != -1) {
+                        // Get a full line (trim removes \r if present)
+                        String line = dataBuffer.substring(0, newlineIndex).trim();
+                        // Remove processed line including \n from buffer
+                        dataBuffer.delete(0, newlineIndex + 1);
+
+                        // Display the line in UI
+                        runOnUiThread(() -> {
+                            statusTextView.append("\n" + line);
+                            scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
+                        });
+                    }
                 }
             }
         }).start();
     }
 }
+
+
+
+
+
+
+
+
