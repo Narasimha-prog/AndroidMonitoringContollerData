@@ -17,7 +17,6 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -43,18 +42,17 @@ public class DashboardActivity extends AppCompatActivity {
             if (ACTION_USB_PERMISSION.equals(action)) {
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 if (device != null && intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                    Log.d(TAG, "Permission granted for: " + device.getDeviceName());
+                    logMessage("Permission granted for: " + device.getDeviceName());
                     connectedController = device;
                     openUsbDevice(device);
                 } else {
-                    Log.d(TAG, "Permission denied.");
-                    Toast.makeText(context, "USB Permission Denied.", Toast.LENGTH_SHORT).show();
+                    logMessage("USB Permission Denied.");
                 }
 
             } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 if (device != null) {
-                    Log.d(TAG, "USB device attached: " + device.getDeviceName());
+                    logMessage("USB device attached: " + device.getDeviceName());
                     connectedController = device;
                     requestUsbPermission(device);
                 }
@@ -62,14 +60,13 @@ public class DashboardActivity extends AppCompatActivity {
             } else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 if (device != null && device.equals(connectedController)) {
-                    Log.d(TAG, "Device detached: " + device.getDeviceName());
+                    logMessage("Device detached: " + device.getDeviceName());
                     connectedController = null;
                     statusTextView.setText("USB Status: Not Connected");
                     if (usbConnection != null) {
                         usbConnection.close();
                         usbConnection = null;
                     }
-                    Toast.makeText(context, "USB Device Detached", Toast.LENGTH_SHORT).show();
                 }
             }
         }
@@ -111,7 +108,7 @@ public class DashboardActivity extends AppCompatActivity {
 
     private void findAndRequestFirstUsbDevice() {
         if (usbManager == null) {
-            Log.e(TAG, "USB Manager not available");
+            logMessage("USB Manager not available");
             return;
         }
 
@@ -142,39 +139,45 @@ public class DashboardActivity extends AppCompatActivity {
         UsbInterface usbInterface = null;
         inEndpoint = null;
 
-        // Find IN endpoint
+        logMessage("Opening device: " + device.getDeviceName() +
+                " VID=" + device.getVendorId() +
+                " PID=" + device.getProductId());
+
+        // List interfaces and endpoints
         for (int i = 0; i < device.getInterfaceCount(); i++) {
             UsbInterface intf = device.getInterface(i);
+            logMessage("Interface " + i + " with " + intf.getEndpointCount() + " endpoints");
             for (int j = 0; j < intf.getEndpointCount(); j++) {
                 UsbEndpoint endpoint = intf.getEndpoint(j);
+                logMessage("  Endpoint " + j +
+                        " type=" + endpoint.getType() +
+                        " dir=" + (endpoint.getDirection() == UsbConstants.USB_DIR_IN ? "IN" : "OUT"));
                 if (endpoint.getType() == UsbConstants.USB_ENDPOINT_XFER_BULK &&
                         endpoint.getDirection() == UsbConstants.USB_DIR_IN) {
                     inEndpoint = endpoint;
                     usbInterface = intf;
-                    break;
                 }
             }
-            if (inEndpoint != null) break;
         }
 
         if (usbInterface == null || inEndpoint == null) {
-            Toast.makeText(this, "No readable endpoint found.", Toast.LENGTH_SHORT).show();
+            logMessage("No readable (bulk IN) endpoint found.");
             return;
         }
 
         usbConnection = usbManager.openDevice(device);
         if (usbConnection == null) {
-            Toast.makeText(this, "Failed to open connection.", Toast.LENGTH_SHORT).show();
+            logMessage("Failed to open connection.");
             return;
         }
 
         if (usbConnection.claimInterface(usbInterface, true)) {
+            logMessage("USB Device ready. Interface claimed.");
             statusTextView.setText("USB Status: Connected (" +
                     device.getVendorId() + ":" + device.getProductId() + ")");
-            Log.d(TAG, "USB Device ready. Starting read thread.");
             startReadingThread();
         } else {
-            Toast.makeText(this, "Failed to claim interface.", Toast.LENGTH_SHORT).show();
+            logMessage("Failed to claim interface.");
             usbConnection.close();
         }
     }
@@ -186,35 +189,31 @@ public class DashboardActivity extends AppCompatActivity {
 
             while (connectedController != null && usbConnection != null) {
                 int bytesRead = usbConnection.bulkTransfer(inEndpoint, buffer, buffer.length, 1000);
+
                 if (bytesRead > 0) {
-                    // Convert bytes read to string and append to dataBuffer
                     String receivedChunk = new String(buffer, 0, bytesRead);
+                    logMessage("[RAW] " + receivedChunk);
+
                     dataBuffer.append(receivedChunk);
 
                     int newlineIndex;
-                    // Extract lines separated by \n
                     while ((newlineIndex = dataBuffer.indexOf("\n")) != -1) {
-                        // Get a full line (trim removes \r if present)
                         String line = dataBuffer.substring(0, newlineIndex).trim();
-                        // Remove processed line including \n from buffer
                         dataBuffer.delete(0, newlineIndex + 1);
-
-                        // Display the line in UI
-                        runOnUiThread(() -> {
-                            statusTextView.append("\n" + line);
-                            scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
-                        });
+                        logMessage("[LINE] " + line);
                     }
+                } else {
+                    logMessage("bulkTransfer timeout (no data this cycle).");
                 }
             }
         }).start();
     }
+
+    private void logMessage(String msg) {
+        Log.d(TAG, msg); // Logcat
+        runOnUiThread(() -> {
+            statusTextView.append("\n" + msg);
+            scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
+        });
+    }
 }
-
-
-
-
-
-
-
-
